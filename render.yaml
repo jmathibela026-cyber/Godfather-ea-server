@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: godfather-ea-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: godfather-ea-db
+          property: connectionString
+      - key: KEY_SECRET
+        generateValue: true
+      - key: MT_SECRET
+        generateValue: true
+      - key: ADMIN_TOKEN
+        generateValue: true
+
+databases:
+  - name: godfather-ea-db
+    plan: free
