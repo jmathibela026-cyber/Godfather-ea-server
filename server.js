@@ -249,4 +249,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Server error" });
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("Server running"));
+// Sets up the database tables automatically on boot (see migrate.js), then
+// starts accepting requests only once that's done.
+require("./migrate").migrate(db)
+  .then(() => app.listen(process.env.PORT || 3000, () => console.log("Server running")))
+  .catch((e) => { console.error("Migration failed:", e.message); process.exit(1); });
