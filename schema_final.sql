@@ -23,10 +23,13 @@ CREATE TABLE IF NOT EXISTS bots (
   name        TEXT NOT NULL,
   author      TEXT NOT NULL DEFAULT '',
   image_path  TEXT,
-  file_path   TEXT NOT NULL,
+  file_path   TEXT,                     -- the original file name, e.g. "MyEA.ex5"
+  file_data   BYTEA,                    -- the actual .ex4/.ex5 bytes (no separate file storage yet)
   platform    TEXT NOT NULL DEFAULT 'mt5' CHECK (platform IN ('mt4', 'mt5')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE bots ALTER COLUMN file_path DROP NOT NULL;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS file_data BYTEA;
 
 CREATE TABLE IF NOT EXISTS license_keys (
   id          BIGSERIAL PRIMARY KEY,

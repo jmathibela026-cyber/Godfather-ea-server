@@ -9,7 +9,7 @@ const { registerMtRoutes } = require("./mt");
 
 const app = express();
 app.use(require("./cors").corsMiddleware);
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Sends async errors to the error handler instead of crashing the server
@@ -77,16 +77,23 @@ async function checkLicense(userBotId) {
 
 // ---------- admin: bots and keys ----------
 
-// POST /admin/bots { name, author, imagePath, filePath, platform: "mt5" | "mt4" }
-// (file upload itself: store the .ex4/.ex5 and the cover image in your storage, then pass their paths)
+// POST /admin/bots { name, author, platform, fileName, fileBase64 }
+// The .ex4/.ex5 file itself is uploaded here (base64-encoded) and stored in the
+// database, since there's no separate file storage set up yet.
 app.post("/admin/bots", requireAdmin, wrap(async (req, res) => {
-  const { name, author = "", imagePath = null, filePath } = req.body;
+  const { name, author = "", fileName, fileBase64 } = req.body;
   const platform = String(req.body.platform || "mt5").toLowerCase();
-  if (!name || !filePath) return res.status(400).json({ error: "name and filePath are required" });
+  if (!name || !fileBase64) return res.status(400).json({ error: "name and fileBase64 are required" });
   if (!["mt4", "mt5"].includes(platform)) return res.status(400).json({ error: "platform must be mt4 or mt5" });
+
+  let fileData;
+  try { fileData = Buffer.from(fileBase64, "base64"); } catch { return res.status(400).json({ error: "Invalid file data" }); }
+  if (!fileData.length) return res.status(400).json({ error: "The uploaded file is empty" });
+  if (fileData.length > 10 * 1024 * 1024) return res.status(400).json({ error: "File is too large (max 10MB)" });
+
   const { rows } = await db.query(
-    "INSERT INTO bots (name, author, image_path, file_path, platform) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-    [name, author, imagePath, filePath, platform]
+    "INSERT INTO bots (name, author, file_path, file_data, platform) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    [name, author, fileName || null, fileData, platform]
   );
   res.json({ botId: rows[0].id });
 }));
