@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS license_keys (
   expires_at  TIMESTAMPTZ,
   revoked_at  TIMESTAMPTZ
 );
+ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS issued_to TEXT; -- admin's own note, e.g. the client's name
 CREATE INDEX IF NOT EXISTS idx_license_keys_bot ON license_keys(bot_id);
 
 CREATE TABLE IF NOT EXISTS user_bots (

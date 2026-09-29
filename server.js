@@ -91,19 +91,26 @@ app.post("/admin/bots", requireAdmin, wrap(async (req, res) => {
   res.json({ botId: rows[0].id });
 }));
 
-// POST /admin/keys { botId, count, expiresInDays } -> plaintext keys returned ONCE
+// GET /admin/bots -> for the "Choose an Expert Advisor" dropdown
+app.get("/admin/bots", requireAdmin, wrap(async (req, res) => {
+  const { rows } = await db.query("SELECT id, name, platform FROM bots ORDER BY name");
+  res.json({ bots: rows });
+}));
+
+// POST /admin/keys { botId, count, expiresInDays, issuedTo } -> plaintext keys returned ONCE
 app.post("/admin/keys", requireAdmin, wrap(async (req, res) => {
   const bot = await db.query("SELECT id FROM bots WHERE id = $1", [req.body.botId]);
   if (!bot.rows[0]) return res.status(400).json({ error: "Unknown botId" });
   const count = Math.min(Number(req.body.count) || 1, 500);
   const days = Number(req.body.expiresInDays) || null;
+  const issuedTo = req.body.issuedTo ? String(req.body.issuedTo).slice(0, 200) : null;
   const keys = [];
   for (let i = 0; i < count; i++) {
     const key = generateKey();
     await db.query(
-      `INSERT INTO license_keys (key_hash, bot_id, expires_at)
-       VALUES ($1, $2, CASE WHEN $3::int IS NULL THEN NULL ELSE now() + ($3::int * interval '1 day') END)`,
-      [hashKey(key), bot.rows[0].id, days]
+      `INSERT INTO license_keys (key_hash, bot_id, expires_at, issued_to)
+       VALUES ($1, $2, CASE WHEN $3::int IS NULL THEN NULL ELSE now() + ($3::int * interval '1 day') END, $4)`,
+      [hashKey(key), bot.rows[0].id, days, issuedTo]
     );
     keys.push(key);
   }
