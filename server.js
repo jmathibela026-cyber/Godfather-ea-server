@@ -91,9 +91,17 @@ app.post("/admin/bots", requireAdmin, wrap(async (req, res) => {
   if (!fileData.length) return res.status(400).json({ error: "The uploaded file is empty" });
   if (fileData.length > 10 * 1024 * 1024) return res.status(400).json({ error: "File is too large (max 10MB)" });
 
+  let imageData = null, imageMime = null;
+  if (req.body.imageBase64) {
+    imageMime = String(req.body.imageMime || "image/jpeg");
+    if (!/^image\/(jpeg|png|webp)$/.test(imageMime)) return res.status(400).json({ error: "Image must be JPEG, PNG or WebP" });
+    imageData = Buffer.from(req.body.imageBase64, "base64");
+    if (!imageData.length || imageData.length > 3 * 1024 * 1024) return res.status(400).json({ error: "Image must be under 3MB" });
+  }
+
   const { rows } = await db.query(
-    "INSERT INTO bots (name, author, file_path, file_data, platform) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-    [name, author, fileName || null, fileData, platform]
+    "INSERT INTO bots (name, author, file_path, file_data, platform, image_data, image_mime) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+    [name, author, fileName || null, fileData, platform, imageData, imageMime]
   );
   res.json({ botId: rows[0].id });
 }));
@@ -185,7 +193,7 @@ app.post("/keys/redeem", requireUser, wrap(async (req, res) => {
 // GET /my/bots -> everything the Home screen shows
 app.get("/my/bots", requireUser, wrap(async (req, res) => {
   const { rows } = await db.query(
-    `SELECT ub.id, b.name, b.author, b.image_path, b.platform, ub.symbols, k.expires_at,
+    `SELECT ub.id, b.name, b.author, b.image_path, (b.image_data IS NOT NULL) AS has_image, b.platform, ub.symbols, k.expires_at,
             (SELECT r.status FROM bot_runs r WHERE r.user_bot_id = ub.id ORDER BY r.id DESC LIMIT 1) AS run_status
      FROM user_bots ub
      JOIN bots b ON b.id = ub.bot_id
@@ -194,6 +202,17 @@ app.get("/my/bots", requireUser, wrap(async (req, res) => {
     [req.user.id]
   );
   res.json({ bots: rows });
+}));
+
+// GET /my/bots/:id/image -> the bot's cover picture (only for the bot's owner)
+app.get("/my/bots/:id/image", requireUser, wrap(async (req, res) => {
+  const bot = await getOwnedBot(req.params.id, req.user.id);
+  if (!bot) return res.status(404).json({ error: "Bot not found" });
+  const { rows } = await db.query("SELECT image_data, image_mime FROM bots WHERE id = $1", [bot.bot_id]);
+  if (!rows[0] || !rows[0].image_data) return res.status(404).json({ error: "No image" });
+  res.set("Content-Type", rows[0].image_mime || "image/jpeg");
+  res.set("Cache-Control", "private, max-age=3600");
+  res.send(rows[0].image_data);
 }));
 
 // DELETE /my/bots/:id -> Remove button. The app then shows the "add license key" page.

@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS bots (
 );
 ALTER TABLE bots ALTER COLUMN file_path DROP NOT NULL;
 ALTER TABLE bots ADD COLUMN IF NOT EXISTS file_data BYTEA;
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS image_data BYTEA;   -- cover picture shown in the app
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS image_mime TEXT;
 
 CREATE TABLE IF NOT EXISTS license_keys (
   id          BIGSERIAL PRIMARY KEY,
