@@ -2,7 +2,7 @@ services:
   - type: web
     name: godfather-ea-server
     runtime: node
-    plan: free
+    plan: starter   # always on: the bot loop must not sleep
     buildCommand: npm install
     startCommand: npm start
     envVars:
@@ -16,6 +16,10 @@ services:
         generateValue: true
       - key: ADMIN_TOKEN
         generateValue: true
+      - key: METAAPI_TOKEN
+        sync: false        # paste your MetaApi token in the Render dashboard
+      - key: LIVE_TRADING
+        value: "false"     # set to "true" ONLY after a demo account has behaved well
 
 databases:
   - name: godfather-ea-db

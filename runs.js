@@ -98,7 +98,7 @@ function registerRunRoutes(app, { db, requireUser, getOwnedBot, checkLicense, wr
     } catch (e) {
       console.error("Start failed", e.message); // never log the account password
       await db.query("UPDATE bot_runs SET status = 'failed', stopped_at = now() WHERE id = $1", [run.id]);
-      res.status(500).json({ error: "Could not start the bot" });
+      res.status(500).json({ error: e.userMessage || "Could not start the bot" });
     }
   }));
 
@@ -108,7 +108,12 @@ function registerRunRoutes(app, { db, requireUser, getOwnedBot, checkLicense, wr
     if (!bot) return res.status(404).json({ error: "Bot not found" });
     const mode = req.body.mode;
     if (!["close_all", "leave_open"].includes(mode)) return res.status(400).json({ error: "Choose close_all or leave_open" });
-    const stopped = await stopRun(bot.id, mode, "user");
+    let stopped;
+    try { stopped = await stopRun(bot.id, mode, "user"); }
+    catch (e) {
+      console.error("Stop failed", e.message);
+      return res.status(500).json({ error: "Could not stop safely: " + String(e.message || "").slice(0, 120) + ". The bot is still running. Try again." });
+    }
     if (!stopped) return res.status(409).json({ error: "Bot is not running" });
     res.json({ stopped: true, mode });
   }));
@@ -118,15 +123,19 @@ function registerRunRoutes(app, { db, requireUser, getOwnedBot, checkLicense, wr
     const bot = await getOwnedBot(req.params.id, req.user.id);
     if (!bot) return res.status(404).json({ error: "Bot not found" });
     const { rows } = await db.query(
-      "SELECT status, started_at, stopped_at, stop_mode FROM bot_runs WHERE user_bot_id = $1 ORDER BY id DESC LIMIT 1",
+      "SELECT status, started_at, stopped_at, stop_mode, instance_id FROM bot_runs WHERE user_bot_id = $1 ORDER BY id DESC LIMIT 1",
       [bot.id]
     );
     const acct = await db.query(
       "SELECT 1 FROM mt_accounts WHERE user_id = $1 AND platform = $2", [req.user.id, bot.platform]
     );
     const run = rows[0] || null;
+    const activity = run && run.instance_id ? runner.getActivity(run.instance_id) : [];
+    if (run) delete run.instance_id;
     res.json({
       run,
+      live: process.env.LIVE_TRADING === "true", // false = dry run, no real orders
+      activity,
       license: await checkLicense(bot.id),
       // the app adds its own "Internet" check on the phone
       checks: {
@@ -136,6 +145,22 @@ function registerRunRoutes(app, { db, requireUser, getOwnedBot, checkLicense, wr
       },
     });
   }));
+
+  // After a server restart, bring back every run still marked running; mark half-started ones failed.
+  setTimeout(async () => {
+    try {
+      await db.query("UPDATE bot_runs SET status = 'failed', stopped_at = now() WHERE status IN ('starting', 'stopping')");
+      const { rows } = await db.query(
+        `SELECT r.id, r.instance_id, r.settings FROM bot_runs r WHERE r.status = 'running' AND r.instance_id IS NOT NULL`
+      );
+      for (const r of rows) {
+        try { await runner.resumeInstance({ instanceId: r.instance_id, settings: r.settings }); console.log("Resumed run", r.id); }
+        catch (e) { console.error("Could not resume run", r.id, e.message); }
+      }
+    } catch (e) {
+      console.error("Resume failed", e.message);
+    }
+  }, 5000);
 
   // Every minute: stop running bots whose key was revoked or has expired
   setInterval(async () => {
